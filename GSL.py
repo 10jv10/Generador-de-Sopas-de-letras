@@ -321,6 +321,29 @@ def dibujar_pagina_sopa(c, sopa, palabras, theme, config):
     # Ancho de cada columna de palabras
     col_width = (ancho_usable - (2 * BOX_PADDING)) / n_cols
     
+    # --- ¡NUEVA LÓGICA DE TRUNCAMIENTO! ---
+    try:
+        # 1. Obtener el ancho de un solo carácter (siendo monospaciada)
+        # Usamos 'W' por ser ancha, como medida de seguridad.
+        # (Esto funciona porque la fuente se registra en 'exportar_pdf' ANTES de llamar a esta función)
+        char_width = pdfmetrics.stringWidth("W", FONT_NAME_REGULAR, WORDS_FONT_SIZE)
+        
+        # 2. Calcular cuántos caracteres caben en la columna
+        # Dejamos un 5% de margen de seguridad para que no se toquen
+        if char_width > 0:
+             max_chars = int((col_width * 0.95) / char_width)
+        else:
+            max_chars = 18 # Fallback por si char_width es 0
+        
+        # Poner un límite mínimo por si acaso
+        if max_chars < 5: max_chars = 5 
+
+    except Exception as e:
+        # Fallback en caso de que la fuente no esté registrada (no debería pasar)
+        st.warning(f"Error al calcular ancho de fuente: {e}. Usando fallback de 15 chars.")
+        max_chars = 15 # Usamos un número más seguro que 18
+    # --- FIN NUEVA LÓGICA ---
+    
     # --- Bucle para dibujar cada palabra ---
     for i, word in enumerate(palabras):
         col_index = i // max_words_per_col
@@ -342,7 +365,8 @@ def dibujar_pagina_sopa(c, sopa, palabras, theme, config):
         cy_base = y_top_of_centered_block - font_ascent_guess
         cy = cy_base - (row_index * line_height)
 
-        c.drawString(cx, cy, word.upper()[:18]) # Limitar longitud de palabra
+        # ¡AQUÍ USAMOS EL LÍMITE CALCULADO!
+        c.drawString(cx, cy, word.upper()[:max_chars]) # Límite dinámico
 
     # Bajar el cursor hasta debajo del recuadro de palabras
     y_cursor -= (word_list_height_total + PADDING)
