@@ -64,19 +64,21 @@ def cm_to_pt(cm):
     """
     return cm * 28.3465
 
-def crear_sopa_letras(palabras, dimension=20):
+def crear_sopa_letras(palabras, dimension=20, dificultad="Difícil"):
     """
-    Genera una sopa de letras (cuadrícula) e intenta colocar todas las palabras.
+    Genera una sopa de letras (cuadrícula) e intenta colocar todas las palabras
+    basado en un nivel de dificultad.
     
     *** Optimización Clave ***:
     Esta función ordena las palabras de más larga a más corta antes de
     intentar colocarlas. Esto aumenta drásticamente la probabilidad de que
-    todas las palabras quepan, ya que las palabras más difíciles (largas)
-    encuentran espacio primero.
+    todas las palabras quepan.
     
     Args:
         palabras (list[str]): Lista de palabras a incluir en la sopa.
         dimension (int): Tamaño de la cuadrícula (dimension x dimension).
+        dificultad (str): "Fácil", "Medio" o "Difícil". Controla las
+                          direcciones permitidas.
         
     Returns:
         tuple: Contiene:
@@ -86,12 +88,41 @@ def crear_sopa_letras(palabras, dimension=20):
             - palabras_no_colocadas (list[str]): Lista de palabras que
                                                   no se pudieron colocar.
     """
+    
+    # --- Lógica de Dificultad (¡CORRECTAMENTE INDENTADO!) ---
+    # (dy, dx) -> (fila, columna)
+    # (1, 0) = Abajo
+    # (-1, 0) = Arriba
+    # (0, 1) = Derecha
+    # (0, -1) = Izquierda
+    # (1, 1) = Abajo-Derecha
+    # (1, -1) = Abajo-Izquierda
+    # (-1, 1) = Arriba-Derecha
+    # (-1, -1) = Arriba-Izquierda
+    
+    DIRECCIONES_MAP = {
+        "Fácil": [
+            (0, 1),  # Derecha
+            (1, 0)   # Abajo
+        ],
+        "Medio": [
+            (0, 1),  # Derecha
+            (1, 0),  # Abajo
+            (1, 1),  # Abajo-Derecha
+            (1, -1)  # Abajo-Izquierda
+        ],
+        "Difícil": [
+            (1,0), (0,1), (1,1), (-1,1), (-1,0), (0,-1), (-1,-1), (1,-1) # Todas las 8
+        ]
+    }
+    
+    # Seleccionar las direcciones basadas en la dificultad
+    direcciones = DIRECCIONES_MAP.get(dificultad, DIRECCIONES_MAP["Difícil"])
+    # --- Fin Lógica de Dificultad ---
+
     sopa = [[' ' for _ in range(dimension)] for _ in range(dimension)]
     ubicaciones = {}
     palabras_no_colocadas = []
-    
-    # 8 direcciones: horizontal, vertical y diagonales
-    direcciones = [(1,0), (0,1), (1,1), (-1,1), (-1,0), (0,-1), (-1,-1), (1,-1)]
     
     def chequear_fit(palabra, fila, col, dy, dx):
         """Helper interno: Verifica si una palabra cabe en una ubicación."""
@@ -111,7 +142,7 @@ def crear_sopa_letras(palabras, dimension=20):
         palabra_upper = palabra.upper()
         posibles_ubicaciones = []
         
-        # Buscar todas las ubicaciones válidas
+        # Buscar todas las ubicaciones válidas (usando la lista 'direcciones' seleccionada)
         for dy, dx in direcciones:
             for fila_inicio in range(dimension):
                 for col_inicio in range(dimension):
@@ -526,7 +557,14 @@ excel_file = st.file_uploader("Selecciona tu archivo Excel", type=["xlsx"])
 dimension = st.number_input("Tamaño de cuadrícula (ej. 20x20)", min_value=10, max_value=30, value=20)
 words_per_puzzle = st.number_input("Número de palabras por sopa", min_value=5, max_value=40, value=20)
 
-# 3. Configuración del PDF
+# 3. Nivel de Dificultad (NUEVO)
+dificultad = st.selectbox(
+    "Nivel de dificultad",
+    ("Fácil", "Medio", "Difícil"),
+    index=2 # 'Difícil' por defecto
+)
+
+# 4. Configuración del PDF
 nombre_tamaño = st.selectbox("Tamaño de página KDP", list(TAMAÑOS_KDP.keys()), index=12) # '8.5" x 8.5"' por defecto
 
 # Convertir el tamaño seleccionado a puntos
@@ -544,7 +582,7 @@ if st.button("Generar PDF de Sopas de Letras"):
         if not word_lists:
             st.error("No se encontraron palabras en el archivo Excel. Revisa el formato.")
         else:
-            st.info(f"Se van a generar {len(word_lists)} sopas de letras.")
+            st.info(f"Se van a generar {len(word_lists)} sopas de letras (dificultad: {dificultad}).")
         
             # Listas para almacenar los resultados de cada sopa
             sopas_list = []
@@ -554,7 +592,13 @@ if st.button("Generar PDF de Sopas de Letras"):
             # 2. Generar cada Sopa (Lógica)
             with st.spinner("Generando sopas..."):
                 for words, theme in zip(word_lists, themes):
-                    sopa, ubicaciones, no_colocadas = crear_sopa_letras(words, dimension=dimension)
+                    
+                    # PASAR LA DIFICULTAD A LA FUNCIÓN
+                    sopa, ubicaciones, no_colocadas = crear_sopa_letras(
+                        words, 
+                        dimension=dimension, 
+                        dificultad=dificultad
+                    )
                     
                     # Informar al usuario si algunas palabras no cupieron
                     if no_colocadas:
