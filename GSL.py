@@ -2,181 +2,580 @@ import streamlit as st
 import pandas as pd
 import random
 from io import BytesIO
-from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from reportlab.lib.units import inch
-from reportlab.lib.colors import black
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.colors import black
+from reportlab.lib.units import inch
+from reportlab.lib.pagesizes import letter # Usaremos 'letter' como base
 
-st.title("[translate:Generador de sopas de letras KDP]")
-st.write("[translate:¡Bienvenido! Sube tu archivo Excel de palabras para empezar.]")
+# --- CONSTANTES GLOBALES DE DISEÑO ---
 
-excel_file = st.file_uploader("[translate:Selecciona tu archivo Excel]", type=["xlsx"])
-dimension = st.number_input("[translate:Tamaño de cuadrícula]", min_value=10, max_value=30, value=20)
+# Diccionario de tamaños KDP (ancho, alto en cm)
+TAMAÑOS_KDP = {
+    '5" x 8" (12.7 x 20.32 cm)': (12.7, 20.32),
+    '5.06" x 7.81" (12.85 x 19.84 cm)': (12.85, 19.84),
+    '5.25" x 8" (13.34 x 20.32 cm)': (13.34, 20.32),
+    '5.5" x 8.5" (13.97 x 21.59 cm)': (13.97, 21.59),
+    '6" x 9" (15.24 x 22.86 cm)': (15.24, 22.86),
+    '6.14" x 9.21" (15.6 x 23.39 cm)': (15.6, 23.39),
+    '6.69" x 9.61" (16.99 x 24.41 cm)': (16.99, 24.41),
+    '7" x 10" (17.78 x 25.4 cm)': (17.78, 25.4),
+    '8" x 10" (20.32 x 25.4 cm)': (20.32, 25.4),
+    '8.25" x 6" (20.96 x 15.24 cm)': (20.96, 15.24),
+    '8.25" x 8.25" (20.96 x 20.96 cm)': (20.96, 20.96),
+    '8.27" x 11.69" (21.01 x 29.69 cm)': (21.01, 29.69),
+    '8.5" x 8.5" (21.59 x 21.59 cm)': (21.59, 21.59),
+    '8.5" x 11" (21.59 x 27.94 cm)': (21.59, 27.94)
+}
+
+# --- CONSTANTES DE FUENTES ---
+FONT_NAME_REGULAR = "RobotoMono-Regular"
+FONT_NAME_BOLD = "RobotoMono-Bold"
+TTF_FILE_REGULAR = "RobotoMono-Regular.ttf"
+TTF_FILE_BOLD = "RobotoMono-Bold.ttf"
+
+# --- CONSTANTES DE DISEÑO Y LAYOUT ---
+PADDING = 0.75 * inch              # Margen de seguridad interior (sangrado)
+TITLE_FONT_SIZE = 18               # Tamaño fijo para el título de la sopa
+WORDS_FONT_SIZE = 11               # Tamaño fijo para la lista de palabras
+SPACE_AFTER_TITLE = 0.2 * inch     # Espacio entre título y lista de palabras
+INTERLINEADO_PALABRAS = 1.3        # Multiplicador de altura de línea
+PROPORCION_LETRA_CUADRICULA = 0.7   # Letra ocupa el 70% de la celda
+NUM_COLUMNAS_PALABRAS = 4          # Columnas para la lista de palabras
+SOLUCIONES_POR_PAGINA = 4          # Cuadrícula de 2x2 en páginas de solución
+LETRAS_ALFABETO = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+# Constantes para el recuadro de palabras
+BOX_PADDING = 0.15 * inch          # Relleno interno del recuadro
+BOX_CORNER_RADIUS = 0.1 * inch     # Radio de las esquinas redondeadas
+
+# --- FUNCIONES DE LÓGICA ---
+
+def cm_to_pt(cm):
+    """
+    Convierte una medida de centímetros (cm) a puntos (pt) de ReportLab.
+    
+    Args:
+        cm (float): La medida en centímetros.
+        
+    Returns:
+        float: La medida equivalente en puntos.
+    """
+    return cm * 28.3465
 
 def crear_sopa_letras(palabras, dimension=20):
+    """
+    Genera una sopa de letras (cuadrícula) e intenta colocar todas las palabras.
+    
+    *** Optimización Clave ***:
+    Esta función ordena las palabras de más larga a más corta antes de
+    intentar colocarlas. Esto aumenta drásticamente la probabilidad de que
+    todas las palabras quepan, ya que las palabras más difíciles (largas)
+    encuentran espacio primero.
+    
+    Args:
+        palabras (list[str]): Lista de palabras a incluir en la sopa.
+        dimension (int): Tamaño de la cuadrícula (dimension x dimension).
+        
+    Returns:
+        tuple: Contiene:
+            - sopa (list[list[str]]): La cuadrícula 2D completa con letras.
+            - ubicaciones (dict): Diccionario {palabra: (fila, col, dx, dy)}
+                                  con la ubicación de las palabras colocadas.
+            - palabras_no_colocadas (list[str]): Lista de palabras que
+                                                  no se pudieron colocar.
+    """
     sopa = [[' ' for _ in range(dimension)] for _ in range(dimension)]
     ubicaciones = {}
-    def colocar_palabra(sopa, palabra):
-        direcciones = [(1,0), (0,1), (1,1), (-1,1), (-1,0), (0,-1), (-1,-1), (1,-1)]
-        random.shuffle(direcciones)
+    palabras_no_colocadas = []
+    
+    # 8 direcciones: horizontal, vertical y diagonales
+    direcciones = [(1,0), (0,1), (1,1), (-1,1), (-1,0), (0,-1), (-1,-1), (1,-1)]
+    
+    def chequear_fit(palabra, fila, col, dy, dx):
+        """Helper interno: Verifica si una palabra cabe en una ubicación."""
+        for i in range(len(palabra)):
+            fila_actual, col_actual = fila + i * dy, col + i * dx
+            # 1. Comprobar límites de la cuadrícula
+            if not (0 <= fila_actual < dimension and 0 <= col_actual < dimension):
+                return False
+            # 2. Comprobar colisiones con otras letras
+            celda = sopa[fila_actual][col_actual]
+            if celda != ' ' and celda != palabra[i]:
+                return False
+        return True
+
+    def colocar_palabra(palabra):
+        """Helper interno: Intenta colocar una palabra en la cuadrícula."""
+        palabra_upper = palabra.upper()
+        posibles_ubicaciones = []
+        
+        # Buscar todas las ubicaciones válidas
         for dy, dx in direcciones:
-            for _ in range(dimension * dimension * 2):
-                fila_inicio = random.randint(0, dimension - 1)
-                col_inicio = random.randint(0, dimension - 1)
-                fit = True
-                for i in range(len(palabra)):
-                    fila_actual = fila_inicio + i * dy
-                    col_actual = col_inicio + i * dx
-                    if not (0 <= fila_actual < dimension and 0 <= col_actual < dimension):
-                        fit = False
-                        break
-                    if sopa[fila_actual][col_actual] != ' ' and sopa[fila_actual][col_actual] != palabra[i]:
-                        fit = False
-                        break
-                if fit:
-                    for i in range(len(palabra)):
-                        fila_actual = fila_inicio + i * dy
-                        col_actual = col_inicio + i * dx
-                        sopa[fila_actual][col_actual] = palabra[i]
-                    return (fila_inicio, col_inicio, dx, dy)
-        return None
-    for palabra in palabras:
-        ubicacion = colocar_palabra(sopa, palabra.upper())
+            for fila_inicio in range(dimension):
+                for col_inicio in range(dimension):
+                    if chequear_fit(palabra_upper, fila_inicio, col_inicio, dy, dx):
+                        posibles_ubicaciones.append((fila_inicio, col_inicio, dy, dx))
+        
+        if posibles_ubicaciones:
+            # Si hay ubicaciones, elegir una al azar
+            random.shuffle(posibles_ubicaciones)
+            fila_inicio, col_inicio, dy, dx = posibles_ubicaciones[0]
+            
+            # Colocar la palabra en la cuadrícula
+            for i in range(len(palabra_upper)):
+                fila_actual = fila_inicio + i * dy
+                col_actual = col_inicio + i * dx
+                sopa[fila_actual][col_actual] = palabra_upper[i]
+            
+            # Devolver la ubicación para las soluciones
+            return (fila_inicio, col_inicio, dx, dy)
+        
+        return None # No se pudo colocar
+
+    # --- ¡OPTIMIZACIÓN! ---
+    # Ordenar palabras de más larga a más corta.
+    palabras_ordenadas = sorted(palabras, key=len, reverse=True)
+
+    for palabra in palabras_ordenadas:
+        ubicacion = colocar_palabra(palabra)
         if ubicacion:
             ubicaciones[palabra.upper()] = ubicacion
-    letras_aleatorias = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        else:
+            palabras_no_colocadas.append(palabra)
+            
+    # Rellenar los espacios vacíos con letras aleatorias
     for i in range(dimension):
         for j in range(dimension):
             if sopa[i][j] == ' ':
-                sopa[i][j] = random.choice(letras_aleatorias)
-    return sopa, ubicaciones
+                sopa[i][j] = random.choice(LETRAS_ALFABETO)
+                
+    return sopa, ubicaciones, palabras_no_colocadas
 
-def exportar_pdf(sopas_list, palabras_list, ubicaciones_list, themes, dimension, filename='sopas_de_letras.pdf'):
-    buffer = BytesIO()
-    try:
-        pdfmetrics.registerFont(TTFont('Aleo', 'Aleo-VariableFont_wght.ttf'))
-        aleo_font = "Aleo"
-    except:
-        aleo_font = "Helvetica"
-    c = canvas.Canvas(buffer, pagesize=A4)
-    left_margin = 0.5 * inch
-    right_margin = A4[0] - 0.5 * inch
-    top_margin = A4[1] - 0.75 * inch
-    line_height_words = 14
-    num_col_words = 4
-    words_per_column = 5
-    col_width = (right_margin - left_margin) / num_col_words
-    cell_size_grid = min((right_margin - left_margin) / dimension, 18)  # máximo tamaño visual estable
-    grid_width = dimension * cell_size_grid
-    grid_height = dimension * cell_size_grid
-    left_grid = left_margin
-    top_grid = top_margin - 30 - words_per_column * num_col_words * line_height_words - 40
-    for puzzle_index, (sopa, palabras, ubicaciones, theme) in enumerate(zip(sopas_list, palabras_list, ubicaciones_list, themes)):
-        if puzzle_index > 0:
-            c.showPage()
-        c.setFont(aleo_font, 15)
-        c.drawString(left_margin, top_margin - 20, theme)
-        c.setFont(aleo_font, 9)
-        yp_start_words = top_margin - 40
-        for i, word in enumerate(palabras):
-            col_index = i // words_per_column
-            row_index = i % words_per_column
-            c.drawString(left_margin + col_index * col_width, yp_start_words - row_index * line_height_words, word.upper())
-        c.setLineWidth(1)
-        c.setStrokeColor(black)
-        c.rect(left_grid, top_grid - grid_height, grid_width, grid_height, stroke=1, fill=0)
-        c.setFont(aleo_font, 12)
+def procesar_excel(excel_file, words_per_puzzle):
+    """
+    Lee un archivo Excel y lo divide en múltiples listas de palabras.
+    
+    Formato esperado del Excel (en la primera columna):
+    - "Palabra1, TemaA"
+    - "Palabra2"
+    - "Palabra3"
+    ...
+    - "PalabraN, TemaB"
+    - "PalabraN+1"
+    
+    El tema se extrae de la primera palabra que lo define.
+    Agrupa las palabras en listas del tamaño 'words_per_puzzle'.
+    
+    Args:
+        excel_file (UploadedFile): El archivo Excel subido desde Streamlit.
+        words_per_puzzle (int): El número de palabras para cada sopa.
+        
+    Returns:
+        tuple: Contiene:
+            - word_lists (list[list[str]]): Lista de listas de palabras.
+            - themes (list[str]): Lista de temas correspondientes.
+    """
+    df = pd.read_excel(excel_file)
+    word_lists = []
+    themes = []
+    current_words = []
+    current_theme = ""
+
+    for index, row in df.iterrows():
+        cell_value = str(row.iloc[0]).strip()
+        
+        # Si la celda contiene una coma, separamos palabra y tema
+        if ',' in cell_value:
+            word, theme = cell_value.split(',', 1)
+            word, theme = word.strip(), theme.strip()
+            
+            if word and word.lower() != 'nan':
+                current_words.append(word)
+            # El tema solo se asigna si no tenemos ya uno
+            if theme and not current_theme:
+                current_theme = theme
+        else:
+            # Si no hay coma, es solo una palabra
+            if cell_value and cell_value.lower() != 'nan':
+                current_words.append(cell_value)
+        
+        # Si alcanzamos el límite de palabras o es la última fila...
+        if len(current_words) == words_per_puzzle or index == len(df) - 1:
+            if current_words:
+                word_lists.append(current_words.copy())
+                # Asignar tema o un título genérico
+                themes.append(current_theme if current_theme else f"Sopa de letras {len(themes) + 1}")
+                # Resetear para la siguiente sopa
+                current_words.clear()
+                current_theme = ""
+                
+    return word_lists, themes
+
+# --- FUNCIONES DE DIBUJO PDF (REPORTLAB) ---
+
+def dibujar_pagina_sopa(c, sopa, palabras, theme, config):
+    """
+    Dibuja una (1) página completa de sopa de letras en el canvas de ReportLab.
+    
+    Organiza la página en tres secciones (de arriba a abajo):
+    1. Título
+    2. Recuadro con la lista de palabras
+    3. Cuadrícula de la sopa
+    
+    Args:
+        c (canvas.Canvas): El canvas de ReportLab sobre el que dibujar.
+        sopa (list[list[str]]): La cuadrícula 2D de letras.
+        palabras (list[str]): La lista de palabras a mostrar.
+        theme (str): El título de la sopa de letras.
+        config (dict): Diccionario con 'page_size' y 'dimension'.
+    """
+    
+    page_width, page_height = config['page_size']
+    dimension = config['dimension']
+    
+    # Área usable (descontando márgenes/padding)
+    ancho_usable = page_width - 2 * PADDING
+    # 'y_cursor' rastrea nuestra posición vertical, empezando desde arriba
+    y_cursor = page_height - PADDING
+
+    # --- 1. Dibujar Título (en negrita) ---
+    c.setFont(FONT_NAME_BOLD, TITLE_FONT_SIZE)
+    # Dibuja el título en el margen izquierdo, por debajo del padding superior
+    c.drawString(PADDING, y_cursor - TITLE_FONT_SIZE, theme[:60])
+    # Bajar el cursor
+    y_cursor -= (TITLE_FONT_SIZE + SPACE_AFTER_TITLE)
+
+    # --- 2. Dibujar Recuadro y Lista de palabras ---
+    c.setFont(FONT_NAME_REGULAR, WORDS_FONT_SIZE)
+    line_height = WORDS_FONT_SIZE * INTERLINEADO_PALABRAS
+    
+    # --- Lógica de Columnas y Centrado Vertical ---
+    n_palabras = len(palabras)
+    n_cols = NUM_COLUMNAS_PALABRAS
+    
+    # Calcular cuántas filas tendrá la columna más alta (equivale a math.ceil)
+    max_words_per_col = (n_palabras + n_cols - 1) // n_cols
+    
+    # Contar cuántas palabras reales hay en CADA columna
+    col_word_counts = [0] * n_cols
+    for i in range(n_palabras):
+        col_index = i // max_words_per_col
+        if col_index < n_cols:
+            col_word_counts[col_index] += 1
+            
+    # Estimación de la altura de la fuente (para alinear texto verticalmente)
+    font_ascent_guess = WORDS_FONT_SIZE * 0.8
+
+    # Calcular altura total del recuadro
+    word_list_height_inner = max_words_per_col * line_height
+    word_list_height_total = word_list_height_inner + (2 * BOX_PADDING)
+
+    # Coordenadas Y del recuadro
+    y_box_bottom = y_cursor - word_list_height_total
+    
+    # Dibujar el recuadro redondeado
+    c.setLineWidth(1)
+    c.setStrokeColor(black)
+    c.roundRect(
+        PADDING,                  # x
+        y_box_bottom,             # y
+        ancho_usable,             # width
+        word_list_height_total,   # height
+        BOX_CORNER_RADIUS,        # radius
+        stroke=1, fill=0
+    )
+
+    # Ancho de cada columna de palabras
+    col_width = (ancho_usable - (2 * BOX_PADDING)) / n_cols
+    
+    # --- Bucle para dibujar cada palabra ---
+    for i, word in enumerate(palabras):
+        col_index = i // max_words_per_col
+        row_index = i % max_words_per_col
+        
+        # --- Lógica de Centrado Vertical ---
+        # 1. Total de palabras en esta columna específica
+        words_in_this_col = col_word_counts[col_index]
+        
+        # 2. Offset para centrar esta columna (si es más corta que la más alta)
+        this_col_height_inner = words_in_this_col * line_height
+        vertical_offset = (word_list_height_inner - this_col_height_inner) / 2
+        
+        # 3. Posición X (columna)
+        cx = PADDING + BOX_PADDING + (col_index * col_width)
+        
+        # 4. Posición Y (fila, ajustada por el centrado)
+        y_top_of_centered_block = (y_cursor - BOX_PADDING - vertical_offset)
+        cy_base = y_top_of_centered_block - font_ascent_guess
+        cy = cy_base - (row_index * line_height)
+
+        c.drawString(cx, cy, word.upper()[:18]) # Limitar longitud de palabra
+
+    # Bajar el cursor hasta debajo del recuadro de palabras
+    y_cursor -= (word_list_height_total + PADDING)
+
+    # --- 3. Dibujar la Cuadrícula (en el espacio restante) ---
+    grid_available_height = y_cursor - PADDING
+    grid_available_width = ancho_usable
+    
+    # El tamaño de celda se ajusta al espacio disponible (el menor entre ancho y alto)
+    cell_size = min(grid_available_width / dimension, grid_available_height / dimension)
+    
+    grid_width = cell_size * dimension
+    grid_height = cell_size * dimension
+    
+    # Centrar la cuadrícula en el espacio disponible
+    x_grid = PADDING + (grid_available_width - grid_width) / 2
+    y_grid = PADDING + (grid_available_height - grid_height) / 2
+    
+    # Dibujar el borde exterior de la cuadrícula
+    c.setLineWidth(1)
+    c.setStrokeColor(black)
+    c.rect(x_grid, y_grid, grid_width, grid_height, stroke=1, fill=0)
+    
+    # Tamaño de fuente proporcional al tamaño de la celda
+    grid_font_size = int(cell_size * PROPORCION_LETRA_CUADRICULA)
+    c.setFont(FONT_NAME_REGULAR, grid_font_size)
+    
+    # Dibujar cada letra en la cuadrícula
+    for i in range(dimension):
+        for j in range(dimension):
+            letra = sopa[i][j].upper()
+            
+            # Calcular el centro de la celda
+            x_letra = x_grid + j * cell_size + cell_size / 2
+            y_letra = y_grid + grid_height - (i + 0.5) * cell_size
+            
+            # Ajuste vertical fino para centrar la letra (las fuentes no se centran en su 'y' base)
+            y_letra_ajustada = y_letra - (grid_font_size * 0.3) 
+            c.drawCentredString(x_letra, y_letra_ajustada, letra)
+
+def dibujar_paginas_soluciones(c, sopas_list, palabras_list, ubicaciones_list, themes, config):
+    """
+    Dibuja todas las páginas de soluciones, colocando varias (4) por página.
+    
+    Args:
+        c (canvas.Canvas): El canvas de ReportLab.
+        sopas_list (list): Lista de todas las cuadrículas generadas.
+        palabras_list (list): Lista de todas las listas de palabras.
+        ubicaciones_list (list): Lista de todos los diccionarios de ubicaciones.
+        themes (list): Lista de todos los temas.
+        config (dict): Diccionario con 'page_size' y 'dimension'.
+    """
+    
+    page_width, page_height = config['page_size']
+    dimension = config['dimension']
+
+    if not sopas_list:
+        return # No hay nada que dibujar
+
+    # Iniciar la primera página de soluciones
+    c.showPage()
+    pagina_solucion_actual = 1
+    
+    ancho_usable = page_width - 2 * PADDING
+    alto_usable = page_height - 2 * PADDING
+    
+    # Título principal de la sección de soluciones
+    c.setFont(FONT_NAME_BOLD, TITLE_FONT_SIZE)
+    c.drawString(PADDING, page_height - PADDING - TITLE_FONT_SIZE, "Soluciones")
+
+    # Calcular dimensiones para las mini-sopas (layout 2x2)
+    sol_area_width = ancho_usable / 2
+    sol_area_height = (alto_usable - (TITLE_FONT_SIZE + PADDING)) / 2
+    
+    # Calcular tamaño de celda para las mini-cuadrículas
+    cell_size_sol = min(sol_area_width / dimension, sol_area_height / dimension) * 0.85
+    mini_grid_w = cell_size_sol * dimension
+    mini_grid_h = cell_size_sol * dimension
+
+    for sol_index, (sopa, palabras, ubicaciones, theme) in enumerate(zip(sopas_list, palabras_list, ubicaciones_list, themes)):
+        
+        # Posición dentro de la página actual (0, 1, 2, o 3)
+        pos_en_pagina = sol_index % SOLUCIONES_POR_PAGINA
+        
+        # Si es la primera solución (índice 0) de una NUEVA página...
+        if sol_index > 0 and pos_en_pagina == 0:
+            c.showPage() # Crear nueva página
+            pagina_solucion_actual += 1
+            # Añadir título a la nueva página
+            c.setFont(FONT_NAME_BOLD, TITLE_FONT_SIZE)
+            c.drawString(PADDING, page_height - PADDING - TITLE_FONT_SIZE, f"Soluciones (pág. {pagina_solucion_actual})")
+
+        # Calcular fila (0 o 1) y columna (0 o 1) en la cuadrícula 2x2
+        col_sol = pos_en_pagina % 2
+        row_sol = pos_en_pagina // 2
+        
+        # Calcular coordenadas X e Y para esta mini-sopa
+        # Centrar la mini-cuadrícula dentro de su cuadrante
+        x_offset = PADDING + col_sol * sol_area_width
+        left_sol = x_offset + (sol_area_width - mini_grid_w) / 2
+        
+        # El cálculo de Y es más complejo porque ReportLab empieza desde abajo
+        y_area_base = PADDING + (1 - row_sol) * sol_area_height
+        bot_sol = y_area_base + (sol_area_height - mini_grid_h) / 2
+        
+        # Ajuste especial para la fila superior (row_sol == 0) para
+        # que quede debajo del título "Soluciones"
+        if row_sol == 0:
+             bot_sol = (page_height - PADDING - TITLE_FONT_SIZE - PADDING - sol_area_height) + (sol_area_height - mini_grid_h) / 2
+
+        # --- Encontrar todas las celdas que son parte de una solución ---
+        celdas_solucion = set()
+        for p in palabras:
+            ubicacion = ubicaciones.get(p.upper())
+            if ubicacion:
+                fila_ini, col_ini, dx, dy = ubicacion
+                for k in range(len(p)):
+                    celdas_solucion.add((fila_ini + k*dy, col_ini + k*dx))
+
+        # --- Dibujar la mini-cuadrícula ---
+        c.setFont(FONT_NAME_REGULAR, int(cell_size_sol * 0.7))
+        c.setLineWidth(0.5)
         for i in range(dimension):
             for j in range(dimension):
-                letra = sopa[i][j].upper()
-                c.drawCentredString(left_grid + j * cell_size_grid + cell_size_grid / 2,
-                                  top_grid - (i + 1) * cell_size_grid + cell_size_grid / 2 - 4, letra)
-    # Soluciones
-    if sopas_list:
-        c.showPage()
-        c.setFont(aleo_font, 14)
-        c.drawString(left_margin, top_margin - 20, "[translate:Soluciones]")
-        solutions_per_page = 4
-        sol_area_width = (right_margin - left_margin) / 2
-        sol_area_height = (top_margin - left_margin) / 2
-        for sol_index, (sopa_sol, palabras_sol, ubicaciones_sol, theme_sol) in enumerate(zip(sopas_list, palabras_list, ubicaciones_list, themes)):
-            if sol_index > 0 and sol_index % solutions_per_page == 0:
-                c.showPage()
-                c.setFont(aleo_font, 14)
-                c.drawString(left_margin, top_margin - 20, "[translate:Soluciones (cont.)]")
-            cell_size_sol = min(sol_area_width / dimension, sol_area_height / dimension) * 0.9
-            mini_grid_width = dimension * cell_size_sol
-            mini_grid_height = dimension * cell_size_sol
-            col_sol = (sol_index % solutions_per_page) % 2
-            row_sol = (sol_index % solutions_per_page) // 2
-            left_sol = left_margin + col_sol * sol_area_width + (sol_area_width - mini_grid_width) / 2
-            top_sol_draw = top_margin - 20 - row_sol * sol_area_height - (sol_area_height - mini_grid_height) / 2
-            c.setFont(aleo_font, 8)
-            c.setLineWidth(0.5)
-            for i in range(dimension):
-                for j in range(dimension):
-                    x = left_sol + j * cell_size_sol
-                    y = top_sol_draw - (i + 1) * cell_size_sol
-                    c.rect(x, y, cell_size_sol, cell_size_sol, stroke=1, fill=0)
-                    is_word_letter = any(
-                        (i == u[0] + k * u[3] and j == u[1] + k * u[2])
-                        for p in palabras_sol
-                        if (u := ubicaciones_sol.get(p.upper()))
-                        for k in range(len(p))
-                    )
-                    if is_word_letter:
-                        c.setFillColor(black)
-                        c.drawCentredString(x + cell_size_sol / 2, y + cell_size_sol / 2 - 2, sopa_sol[i][j].upper())
-            c.setFont(aleo_font, 10)
-            c.setFillColor(black)
-            c.drawString(left_sol, top_sol_draw - mini_grid_height - 15, theme_sol)
+                x = left_sol + j * cell_size_sol
+                # 'y' se calcula desde abajo hacia arriba
+                y = bot_sol + mini_grid_h - (i + 1) * cell_size_sol 
+                
+                # Dibujar la celda
+                c.rect(x, y, cell_size_sol, cell_size_sol, stroke=1, fill=0)
+                
+                # Si la celda es una solución, rellenarla
+                if (i, j) in celdas_solucion:
+                    c.setFillColor(black)
+                    c.drawCentredString(x + cell_size_sol / 2, y + (cell_size_sol * 0.2), sopa[i][j].upper())
+
+        # Dibujar el título de la mini-sopa (debajo de ella)
+        c.setFont(FONT_NAME_REGULAR, int(cell_size_sol * 0.6))
+        c.setFillColor(black)
+        c.drawCentredString(left_sol + mini_grid_w / 2, bot_sol - 14, theme)
+
+def exportar_pdf(sopas_list, palabras_list, ubicaciones_list, themes, dimension, page_size):
+    """
+    Crea el archivo PDF completo en memoria.
+    
+    Esta función inicializa el canvas, registra las fuentes y luego llama
+    a las funciones de dibujo para las páginas de sopas y las de soluciones.
+    
+    Args:
+        sopas_list (list): Lista de todas las cuadrículas.
+        palabras_list (list): Lista de todas las listas de palabras.
+        ubicaciones_list (list): Lista de todos los diccionarios de ubicaciones.
+        themes (list): Lista de todos los temas.
+        dimension (int): Tamaño de la cuadrícula.
+        page_size (tuple): (ancho, alto) en puntos para el PDF.
+        
+    Returns:
+        BytesIO: Un buffer en memoria que contiene el archivo PDF completo,
+                 listo para ser descargado. O None si falla el registro de fuentes.
+    """
+    buffer = BytesIO()
+    
+    # --- Registro de Fuentes ---
+    # Es crucial registrar las fuentes ANTES de usarlas.
+    try:
+        pdfmetrics.registerFont(TTFont(FONT_NAME_REGULAR, TTF_FILE_REGULAR))
+        pdfmetrics.registerFont(TTFont(FONT_NAME_BOLD, TTF_FILE_BOLD))
+    except Exception as e:
+        st.error(f"¡ERROR DE FUENTE! No se pudieron cargar los archivos .ttf.")
+        st.error(f"Asegúrate de que 'RobotoMono-Regular.ttf' y 'RobotoMono-Bold.ttf' estén en la misma carpeta que el script.")
+        st.error(f"Detalle del error: {e}")
+        return None # Devuelve None para que Streamlit sepa que falló
+
+    # Crear el canvas (el "lienzo" del PDF)
+    c = canvas.Canvas(buffer, pagesize=page_size)
+    
+    # Crear un diccionario de configuración para pasarlo fácilmente
+    config = {
+        "page_size": page_size,
+        "dimension": dimension
+    }
+
+    # --- 1. Dibujar páginas de sopas ---
+    for puzzle_index, (sopa, palabras, ubicaciones, theme) in enumerate(zip(sopas_list, palabras_list, ubicaciones_list, themes)):
+        if puzzle_index > 0:
+            c.showPage() # Crear una nueva página para cada sopa
+        dibujar_pagina_sopa(c, sopa, palabras, theme, config)
+
+    # --- 2. Dibujar páginas de soluciones ---
+    # Esta función se encarga internamente de crear sus propias páginas
+    dibujar_paginas_soluciones(c, sopas_list, palabras_list, ubicaciones_list, themes, config)
+
+    # Guardar y finalizar el PDF
     c.save()
     buffer.seek(0)
     return buffer
 
-if st.button("[translate:Procesar palabras]"):
+
+# --- INTERFAZ DE STREAMLIT (UI) ---
+# Esta sección controla la página web interactiva.
+
+st.title("Generador de Sopas de Letras KDP")
+st.write("¡Bienvenido! Sube tu archivo Excel de palabras para empezar.")
+
+# --- Controles de la Barra Lateral ---
+# st.sidebar.header("Configuración") # Descomenta si prefieres los controles en la barra lateral
+
+# 1. Carga de archivo
+excel_file = st.file_uploader("Selecciona tu archivo Excel", type=["xlsx"])
+
+# 2. Configuración de la Sopa
+dimension = st.number_input("Tamaño de cuadrícula (ej. 20x20)", min_value=10, max_value=30, value=20)
+words_per_puzzle = st.number_input("Número de palabras por sopa", min_value=5, max_value=40, value=20)
+
+# 3. Configuración del PDF
+nombre_tamaño = st.selectbox("Tamaño de página KDP", list(TAMAÑOS_KDP.keys()), index=12) # '8.5" x 8.5"' por defecto
+
+# Convertir el tamaño seleccionado a puntos
+ancho_cm, alto_cm = TAMAÑOS_KDP[nombre_tamaño]
+page_width = cm_to_pt(ancho_cm)
+page_height = cm_to_pt(alto_cm)
+
+# --- Lógica de Generación (Botón Principal) ---
+if st.button("Generar PDF de Sopas de Letras"):
     if excel_file is not None:
-        df = pd.read_excel(excel_file)
-        word_lists = []
-        themes = []
-        current_words = []
-        current_theme = ""
-        words_per_puzzle = 20
-        for index, row in df.iterrows():
-            cell_value = str(row.iloc[0]).strip()
-            if ',' in cell_value:
-                word, theme = cell_value.split(',', 1)
-                word, theme = word.strip(), theme.strip()
-                if word and word.lower() != 'nan':
-                    current_words.append(word)
-                if theme and not current_theme:
-                    current_theme = theme
-            else:
-                if cell_value and cell_value.lower() != 'nan':
-                    current_words.append(cell_value)
-            if len(current_words) == words_per_puzzle or index == len(df) - 1:
-                if current_words:
-                    word_lists.append(current_words.copy())
-                    themes.append(current_theme if current_theme else f"[translate:Sopa de letras] {len(themes) + 1}")
-                current_words.clear()
-                current_theme = ""
-        sopas_list = []
-        palabras_list_filled = []
-        ubicaciones_list = []
-        for words, theme in zip(word_lists, themes):
-            sopa, ubicaciones = crear_sopa_letras(words, dimension=dimension)
-            sopas_list.append(sopa)
-            palabras_list_filled.append(words)
-            ubicaciones_list.append(ubicaciones)
-        buffer = exportar_pdf(sopas_list, palabras_list_filled, ubicaciones_list, themes, dimension)
-        st.success("[translate:¡PDF generado con puzles y soluciones! Descárgalo aquí:]")
-        st.download_button(
-            label="[translate:Descargar PDF]",
-            data=buffer,
-            file_name='sopas_de_letras.pdf',
-            mime='application/pdf'
-        )
+        
+        # 1. Procesar el Excel
+        word_lists, themes = procesar_excel(excel_file, words_per_puzzle)
+        
+        if not word_lists:
+            st.error("No se encontraron palabras en el archivo Excel. Revisa el formato.")
+        else:
+            st.info(f"Se van a generar {len(word_lists)} sopas de letras.")
+        
+            # Listas para almacenar los resultados de cada sopa
+            sopas_list = []
+            palabras_list_filled = []
+            ubicaciones_list = []
+            
+            # 2. Generar cada Sopa (Lógica)
+            with st.spinner("Generando sopas..."):
+                for words, theme in zip(word_lists, themes):
+                    sopa, ubicaciones, no_colocadas = crear_sopa_letras(words, dimension=dimension)
+                    
+                    # Informar al usuario si algunas palabras no cupieron
+                    if no_colocadas:
+                        st.warning(f"En la sopa '{theme}', no se pudieron colocar las siguientes palabras: {', '.join(no_colocadas)}")
+                    
+                    sopas_list.append(sopa)
+                    palabras_list_filled.append(words) # Guardamos la lista original de palabras
+                    ubicaciones_list.append(ubicaciones)
+
+            # 3. Dibujar el PDF
+            with st.spinner("Creando archivo PDF..."):
+                buffer = exportar_pdf(sopas_list, palabras_list_filled, ubicaciones_list, themes, dimension, (page_width, page_height))
+            
+            # 4. Ofrecer la descarga
+            if buffer: # Si el buffer se creó correctamente
+                st.success("¡PDF generado! Descárgalo aquí:")
+                st.download_button(
+                    label="Descargar PDF",
+                    data=buffer,
+                    file_name='sopas_de_letras_kdp.pdf',
+                    mime='application/pdf'
+                )
     else:
-        st.error("[translate:Por favor, sube un archivo Excel.]")
+        st.error("Por favor, sube un archivo Excel.")
