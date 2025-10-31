@@ -186,63 +186,77 @@ def crear_sopa_letras(palabras, dimension=20, dificultad="Difícil"):
 
 def procesar_excel(excel_file, words_per_puzzle):
     """
-    Lee un archivo Excel y lo divide en múltiples listas de palabras.
+    Lee un archivo Excel de dos columnas (Tema, Palabra) y lo divide en 
+    listas de palabras.
     
-    Formato esperado del Excel (en la primera columna):
-    - "Palabra1, TemaA"
-    - "Palabra2"
-    - "Palabra3"
-    ...
-    - "PalabraN, TemaB"
-    - "PalabraN+1"
+    Formato esperado del Excel:
+    - Columna A (índice 0): Tema (ej. "FRUTAS")
+    - Columna B (índice 1): Palabra (ej. "Manzana")
     
-    El tema se extrae de la primera palabra que lo define.
-    Agrupa las palabras en listas del tamaño 'words_per_puzzle'.
+    El usuario DEBE repetir el tema en la Columna A por cada palabra
+    en la Columna B. No debe haber encabezado.
     
     Args:
         excel_file (UploadedFile): El archivo Excel subido desde Streamlit.
-        words_per_puzzle (int): El número de palabras para cada sopa.
+        words_per_puzzle (int): El número máximo de palabras para cada sopa.
         
     Returns:
         tuple: Contiene:
             - word_lists (list[list[str]]): Lista de listas de palabras.
             - themes (list[str]): Lista de temas correspondientes.
     """
-    df = pd.read_excel(excel_file)
-    word_lists = []
-    themes = []
-    current_words = []
-    current_theme = ""
+    try:
+        # 1. Leer el Excel. Asumimos que no hay encabezado (header=None).
+        #    Nombramos las columnas 'Tema' y 'Palabra' para fácil acceso.
+        df = pd.read_excel(excel_file, header=None, names=['Tema', 'Palabra'])
+        
+        # 2. Limpieza de datos (¡ESTA ES LA LÓGICA CLAVE!)
+        #    Eliminar cualquier fila donde falte el Tema O la Palabra.
+        #    Esto obliga al usuario a rellenar ambas columnas.
+        df.dropna(subset=['Tema', 'Palabra'], inplace=True)
 
-    for index, row in df.iterrows():
-        cell_value = str(row.iloc[0]).strip()
-        
-        # Si la celda contiene una coma, separamos palabra y tema
-        if ',' in cell_value:
-            word, theme = cell_value.split(',', 1)
-            word, theme = word.strip(), theme.strip()
+        # 3. Convertir a string y limpiar espacios en blanco (ej. " FRUTAS ")
+        df['Tema'] = df['Tema'].astype(str).str.strip()
+        df['Palabra'] = df['Palabra'].astype(str).str.strip()
+
+        word_lists = []
+        themes = []
+
+        # 4. Agrupar el DataFrame por el 'Tema'
+        #    (Ej. todas las filas de "FRUTAS", todas las de "ANIMALES").
+        grouped = df.groupby('Tema')
+
+        for theme_name, group_df in grouped:
+            # Obtener todas las palabras para este tema como una lista
+            all_words_for_theme = group_df['Palabra'].tolist()
             
-            if word and word.lower() != 'nan':
-                current_words.append(word)
-            # El tema solo se asigna si no tenemos ya uno
-            if theme and not current_theme:
-                current_theme = theme
-        else:
-            # Si no hay coma, es solo una palabra
-            if cell_value and cell_value.lower() != 'nan':
-                current_words.append(cell_value)
-        
-        # Si alcanzamos el límite de palabras o es la última fila...
-        if len(current_words) == words_per_puzzle or index == len(df) - 1:
-            if current_words:
-                word_lists.append(current_words.copy())
-                # Asignar tema o un título genérico
-                themes.append(current_theme if current_theme else f"Sopa de letras {len(themes) + 1}")
-                # Resetear para la siguiente sopa
-                current_words.clear()
-                current_theme = ""
+            # 5. Dividir el grupo grande en "chunks" (trozos)
+            #    basado en 'words_per_puzzle'.
+            
+            # Calcular cuántos chunks saldrán
+            num_chunks = (len(all_words_for_theme) + words_per_puzzle - 1) // words_per_puzzle
+            
+            for i in range(0, len(all_words_for_theme), words_per_puzzle):
+                # Cortar la lista de palabras
+                chunk = all_words_for_theme[i : i + words_per_puzzle]
+                word_lists.append(chunk)
                 
-    return word_lists, themes
+                # Asignar el nombre del tema
+                if num_chunks > 1:
+                    # Si hay más de 1 chunk, añadir un número (ej. "FRUTAS (1)")
+                    chunk_num = (i // words_per_puzzle) + 1
+                    themes.append(f"{theme_name} ({chunk_num})")
+                else:
+                    # Si solo hay 1 chunk, usar el nombre del tema tal cual
+                    themes.append(theme_name)
+                        
+        return word_lists, themes
+
+    except Exception as e:
+        st.error(f"Error al procesar el Excel. Verifica el formato.")
+        st.error(f"Asegúrate de que CADA palabra tenga un tema en la columna A.")
+        st.error(f"Detalle: {e}")
+        return [], []
 
 # --- FUNCIONES DE DIBUJO PDF (REPORTLAB) ---
 
