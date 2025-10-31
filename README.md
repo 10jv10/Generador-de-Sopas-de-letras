@@ -1,32 +1,32 @@
-Generador de Sopas de Letras KDP
-Genera libros de sopas de letras de alta calidad (PDF y PPTX) a partir de tus propias listas de palabras, listos para publicar en Amazon KDP. Utiliza una interfaz gráfica de Streamlit, ajusta dimensiones, dificultad y personaliza los tamaños estándar de KDP fácilmente.
+KDP Word Search Puzzle Generator
+Generate high-quality word search puzzle books (PDF and PPTX) from your own custom word lists, ready to publish on Amazon KDP. Easily customize grid size, difficulty levels, and standard KDP page dimensions through a simple Streamlit interface.
 
-Características
-Interfaz amigable con Streamlit para subir archivos y configurar el libro.
+Features
+User-friendly Streamlit web app for uploading Excel files and configuring puzzles
 
-Soporte para exportación a PDF (alta calidad) y PPTX (editable en PowerPoint).
+Export puzzles as print-ready PDFs or fully editable PowerPoint presentations (PPTX)
 
-Dimensiones de página adaptadas a los formatos oficiales de KDP.
+Supports official KDP page sizes for seamless publishing
 
-Control de dificultad: fácil, medio o difícil (definiendo las direcciones de palabras en la cuadrícula).
+Adjustable difficulty: easy, medium, or hard (controls word placement directions)
 
-Genera automáticamente páginas de soluciones, organizadas en cuadrícula.
+Automatically generates solution pages arranged neatly on the PDF/PPTX
 
-Soporte multitema: cada sopa de letras puede tener su propio tema.
+Supports multiple themes where each puzzle can have its own word list title
 
-Compatible con fuentes personalizadas para impresión profesional.
+Uses custom embedded fonts for professional print quality
 
-Instalación
-Clona el repositorio:
+Installation
+Clone the repository:
 
 bash
-git clone https://github.com/tuusuario/generador-sopas-letras-kdp.git
-cd generador-sopas-letras-kdp
-Instala las dependencias:
+git clone https://github.com/yourusername/kdp-wordsearch-generator.git
+cd kdp-wordsearch-generator
+Install dependencies:
 
 bash
 pip install -r requirements.txt
-Las dependencias principales son:
+Key dependencies are:
 
 streamlit
 
@@ -36,53 +36,50 @@ python-pptx
 
 reportlab
 
-Asegúrate de tener los archivos de fuente (RobotoMono-Regular.ttf y RobotoMono-Bold.ttf) en la raíz del proyecto.
+Ensure the font files (RobotoMono-Regular.ttf and RobotoMono-Bold.ttf) are located in the project root directory.
 
-Uso rápido
-Ejecuta la aplicación:
+Quickstart
+Run the app:
 
 bash
 streamlit run app.py
-Carga tu archivo Excel:
+Upload your Excel file:
 
-Columna A: Tema (debe repetirse para cada palabra)
+Column A: Theme (must repeat for each word)
 
-Columna B: Palabra
+Column B: Word
 
-Sin encabezados.
+No header row required.
 
-Configura el tamaño del libro y la dificultad.
+Select grid size, difficulty level, and output format (PDF or PPTX).
 
-Elige PDF o PPTX y genera.
+Click Generate and download your ready-to-publish puzzle book.
 
-Descarga tu archivo listo para KDP.
+Example Excel format
+Theme	Word
+ANIMALS	Cat
+ANIMALS	Dog
+FRUITS	Apple
+FRUITS	Orange
+Advanced Configuration
+Adjust grid size between 10x10 and 30x30 for custom challenge levels.
 
-Ejemplo de archivo Excel
-Tema	Palabra
-ANIMALES	Gato
-ANIMALES	Perro
-FRUTAS	Manzana
-FRUTAS	Naranja
-Configuración avanzada
-Cambia dimensiones de cuadrícula según lo necesites (recomendado 20x20).
+Large word lists are split into multiple puzzles automatically.
 
-Cada tema puede abarcar múltiples sopas si hay muchas palabras.
+The app informs if any words could not fit the grid at the selected difficulty.
 
-El sistema alerta si alguna palabra no cabe en la cuadrícula seleccionada.
+Contributing
+Contributions are welcome! Please fork the repo, create a feature branch, and submit a pull request. Follow standard GitHub contribution guidelines.
 
-Contribución
-¿Ideas o mejoras?
-¡Las contribuciones son bienvenidas! Realiza un fork, crea tu rama y haz un Pull Request siguiendo la guía estándar de GitHub.
-
-Licencia
-MIT License. Ver archivo LICENSE para más detalles.
+License
+MIT License. See LICENSE file for details.
 
 FAQ
-¿Este generador es válido para cualquier idioma?
-Sí, siempre que utilices letras estándar. Los acentos pueden requerir fuentes alternativas.
+Is this tool language-agnostic?
+Yes, it supports any language using standard letters. Accented characters might need different fonts.
 
-¿El archivo PPTX es completamente editable?
-Sí, puedes modificar palabras, reemplazar fuentes o ajustar cuadrículas en PowerPoint.
+Is the PPTX fully editable?
+Yes, you can edit the puzzles, fonts, and layout using any PowerPoint-compatible editor.
 
-¿Funciona para todos los tamaños de KDP?
-Sí, se incluyen los más usados, pero puedes agregar más tamaños en el diccionario TAMAÑOS_KDP.
+Are all KDP page sizes supported?
+Common sizes are included. You can add more sizes to the TAMAÑOS_KDP dictionary as needed.
