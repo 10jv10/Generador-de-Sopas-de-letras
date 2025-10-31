@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
 import random
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.enum.text import PP_ALIGN
+from pptx.dml.color import RGBColor
 from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -578,6 +582,250 @@ def exportar_pdf(sopas_list, palabras_list, ubicaciones_list, themes, dimension,
     buffer.seek(0)
     return buffer
 
+# --- FUNCIONES DE GENERACIÓN DE PPTX ---
+
+def dibujar_pagina_sopa_ppt(prs, sopa, palabras, theme, config):
+    """
+    Dibuja una (1) diapositiva de sopa de letras en la presentación de PPTX.
+    
+    A diferencia de ReportLab, esto usa formas (cuadros de texto y tablas).
+    """
+    page_width, page_height = config['page_size']
+    dimension = config['dimension']
+    
+    # 1. Añadir una diapositiva en blanco
+    blank_slide_layout = prs.slide_layouts[6] # 'Blank' suele ser el índice 6
+    slide = prs.slides.add_slide(blank_slide_layout)
+    
+    # 2. Definir área usable (en Puntos, ya que page_width/height están en Puntos)
+    ancho_usable = page_width - (2 * PADDING)
+    y_cursor = PADDING # Empezamos desde el margen superior
+
+    # --- 1. Dibujar Título ---
+    # En PPT, añadimos un cuadro de texto
+    txBox = slide.shapes.add_textbox(
+        Pt(PADDING), Pt(y_cursor), Pt(ancho_usable), Pt(TITLE_FONT_SIZE * 1.2)
+    )
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    p.text = theme[:60]
+    p.font.name = FONT_NAME_BOLD
+    p.font.size = Pt(TITLE_FONT_SIZE)
+    y_cursor += (TITLE_FONT_SIZE + SPACE_AFTER_TITLE)
+
+    # --- 2. Dibujar Lista de palabras ---
+    # Usaremos 4 cuadros de texto (uno por columna) para que sea editable
+    n_palabras = len(palabras)
+    max_words_per_col = (n_palabras + NUM_COLUMNAS_PALABRAS - 1) // NUM_COLUMNAS_PALABRAS
+    
+    # Dividir palabras en columnas
+    col_lists = [[] for _ in range(NUM_COLUMNAS_PALABRAS)]
+    for i, word in enumerate(palabras):
+        col_index = i // max_words_per_col
+        if col_index < NUM_COLUMNAS_PALABRAS:
+            col_lists[col_index].append(word.upper())
+            
+    col_width = ancho_usable / NUM_COLUMNAS_PALABRAS
+    
+    # Estimar altura de la lista
+    line_height = WORDS_FONT_SIZE * INTERLINEADO_PALABRAS
+    word_list_height = (max_words_per_col * line_height) + (2 * BOX_PADDING)
+
+    for col_index in range(NUM_COLUMNAS_PALABRAS):
+        text_for_col = "\n".join(col_lists[col_index])
+        col_left = PADDING + (col_index * col_width)
+        
+        txBox_col = slide.shapes.add_textbox(
+            Pt(col_left), Pt(y_cursor), Pt(col_width), Pt(word_list_height)
+        )
+        tf_col = txBox_col.text_frame
+        tf_col.text = text_for_col
+        
+        for p in tf_col.paragraphs:
+            p.font.name = FONT_NAME_REGULAR
+            p.font.size = Pt(WORDS_FONT_SIZE)
+            
+    y_cursor += (word_list_height + PADDING)
+
+    # --- 3. Dibujar la Cuadrícula (¡como una Tabla!) ---
+    grid_available_height = page_height - y_cursor - PADDING
+    grid_available_width = ancho_usable
+    
+    cell_size = min(grid_available_width / dimension, grid_available_height / dimension)
+    
+    grid_width = cell_size * dimension
+    grid_height = cell_size * dimension
+    
+    # Centrar la cuadrícula
+    x_grid = PADDING + (grid_available_width - grid_width) / 2
+    y_grid = y_cursor + (grid_available_height - grid_height) / 2
+
+    # Añadir la tabla
+    shape = slide.shapes.add_table(
+        dimension, dimension, Pt(x_grid), Pt(y_grid), Pt(grid_width), Pt(grid_height)
+    )
+    table = shape.table
+
+    grid_font_size = int(cell_size * PROPORCION_LETRA_CUADRICULA)
+
+    for i in range(dimension):
+        table.rows[i].height = Pt(cell_size) # Definir altura de fila
+        for j in range(dimension):
+            table.columns[j].width = Pt(cell_size) # Definir ancho de columna
+            
+            cell = table.cell(i, j)
+            cell.text = sopa[i][j].upper()
+            
+            # Centrar texto en la celda
+            p = cell.text_frame.paragraphs[0]
+            p.alignment = PP_ALIGN.CENTER
+            p.font.name = FONT_NAME_REGULAR
+            p.font.size = Pt(grid_font_size)
+            
+            # Quitar márgenes internos de la celda
+            cell.margin_top = Pt(0)
+            cell.margin_bottom = Pt(0)
+            cell.margin_left = Pt(0)
+            cell.margin_right = Pt(0)
+
+def dibujar_paginas_soluciones_ppt(prs, sopas_list, palabras_list, ubicaciones_list, themes, config):
+    """
+    Dibuja todas las páginas de soluciones (4 por diapositiva) en PPTX.
+    """
+    page_width, page_height = config['page_size']
+    dimension = config['dimension']
+    
+    if not sopas_list:
+        return
+        
+    slide = None
+    pagina_solucion_actual = 1
+
+    ancho_usable = page_width - 2 * PADDING
+    alto_usable = page_height - 2 * PADDING
+
+    # Dimensiones para las mini-sopas (layout 2x2)
+    sol_area_width = ancho_usable / 2
+    sol_area_height = (alto_usable - (TITLE_FONT_SIZE + PADDING)) / 2
+    
+    cell_size_sol = min(sol_area_width / dimension, sol_area_height / dimension) * 0.85
+    mini_grid_w = cell_size_sol * dimension
+    mini_grid_h = cell_size_sol * dimension
+
+    for sol_index, (sopa, palabras, ubicaciones, theme) in enumerate(zip(sopas_list, palabras_list, ubicaciones_list, themes)):
+        
+        pos_en_pagina = sol_index % SOLUCIONES_POR_PAGINA
+        
+        # 1. Crear nueva diapositiva si es necesario
+        if pos_en_pagina == 0:
+            blank_slide_layout = prs.slide_layouts[6]
+            slide = prs.slides.add_slide(blank_slide_layout)
+            
+            # Título de la diapositiva
+            title = "Soluciones"
+            if sol_index > 0:
+                pagina_solucion_actual += 1
+                title = f"Soluciones (pág. {pagina_solucion_actual})"
+            
+            txBox = slide.shapes.add_textbox(
+                Pt(PADDING), Pt(PADDING), Pt(ancho_usable), Pt(TITLE_FONT_SIZE * 1.2)
+            )
+            txBox.text_frame.paragraphs[0].text = title
+            txBox.text_frame.paragraphs[0].font.name = FONT_NAME_BOLD
+            txBox.text_frame.paragraphs[0].font.size = Pt(TITLE_FONT_SIZE)
+
+        # 2. Calcular celdas de solución
+        celdas_solucion = set()
+        for p in palabras:
+            ubicacion = ubicaciones.get(p.upper())
+            if ubicacion:
+                fila_ini, col_ini, dx, dy = ubicacion
+                for k in range(len(p)):
+                    celdas_solucion.add((fila_ini + k*dy, col_ini + k*dx))
+                    
+        # 3. Calcular posición de la mini-tabla
+        col_sol = pos_en_pagina % 2
+        row_sol = pos_en_pagina // 2
+        
+        # Centrar la mini-cuadrícula dentro de su cuadrante
+        x_offset = PADDING + col_sol * sol_area_width
+        left_sol = x_offset + (sol_area_width - mini_grid_w) / 2
+        
+        y_offset = (PADDING + TITLE_FONT_SIZE + PADDING) + row_sol * sol_area_height
+        top_sol = y_offset + (sol_area_height - mini_grid_h) / 2
+
+        # 4. Dibujar la mini-tabla
+        shape = slide.shapes.add_table(
+            dimension, dimension, Pt(left_sol), Pt(top_sol), Pt(mini_grid_w), Pt(mini_grid_h)
+        )
+        table = shape.table
+        sol_font_size = int(cell_size_sol * 0.6)
+
+        for i in range(dimension):
+            table.rows[i].height = Pt(cell_size_sol)
+            for j in range(dimension):
+                table.columns[j].width = Pt(cell_size_sol)
+                cell = table.cell(i, j)
+                p = cell.text_frame.paragraphs[0]
+                p.alignment = PP_ALIGN.CENTER
+                p.font.name = FONT_NAME_REGULAR
+                p.font.size = Pt(sol_font_size)
+                
+                # Quitar márgenes
+                cell.margin_top = Pt(0); cell.margin_bottom = Pt(0)
+                cell.margin_left = Pt(0); cell.margin_right = Pt(0)
+                
+                if (i, j) in celdas_solucion:
+                    # Rellenar celda de negro
+                    cell.fill.solid()
+                    cell.fill.fore_color.rgb = RGBColor(0, 0, 0)
+                    # Poner texto en blanco
+                    p.text = sopa[i][j].upper()
+                    p.font.color.rgb = RGBColor(255, 255, 255)
+                else:
+                    # Opcional: mostrar letras de relleno
+                    # p.text = sopa[i][j].upper()
+                    # p.font.color.rgb = RGBColor(200, 200, 200) # Gris claro
+                    p.text = "" # O dejar en blanco
+
+        # 5. Dibujar el título de la mini-sopa
+        txBox_theme = slide.shapes.add_textbox(
+            Pt(left_sol), Pt(top_sol + mini_grid_h + 5), Pt(mini_grid_w), Pt(sol_font_size * 1.5)
+        )
+        p_theme = txBox_theme.text_frame.paragraphs[0]
+        p_theme.text = theme
+        p_theme.alignment = PP_ALIGN.CENTER
+        p_theme.font.name = FONT_NAME_REGULAR
+        p_theme.font.size = Pt(sol_font_size)
+
+def crear_presentacion_ppt(sopas_list, palabras_list, ubicaciones_list, themes, dimension, page_size):
+    """
+    Crea el archivo PPTX completo en memoria.
+    """
+    buffer = BytesIO()
+    prs = Presentation()
+    
+    # page_size ya está en puntos (pt)
+    # Convertir los puntos (float) a EMUs (int) usando el helper Pt()
+    prs.slide_width = Pt(page_size[0])
+    prs.slide_height = Pt(page_size[1])
+    
+    config = {
+        "page_size": page_size,
+        "dimension": dimension
+    }
+
+    # 1. Dibujar páginas de sopas
+    for sopa, palabras, ubicaciones, theme in zip(sopas_list, palabras_list, ubicaciones_list, themes):
+        dibujar_pagina_sopa_ppt(prs, sopa, palabras, theme, config)
+
+    # 2. Dibujar páginas de soluciones
+    dibujar_paginas_soluciones_ppt(prs, sopas_list, palabras_list, ubicaciones_list, themes, config)
+
+    prs.save(buffer)
+    buffer.seek(0)
+    return buffer
+
 
 # --- INTERFAZ DE STREAMLIT (UI) ---
 # Esta sección controla la página web interactiva.
@@ -605,13 +853,15 @@ dificultad = st.selectbox(
 # 4. Configuración del PDF
 nombre_tamaño = st.selectbox("Tamaño de página KDP", list(TAMAÑOS_KDP.keys()), index=12) # '8.5" x 8.5"' por defecto
 
+formato_salida = st.radio("Elige el formato de salida:", ("PDF", "PPTX"))
+
 # Convertir el tamaño seleccionado a puntos
 ancho_cm, alto_cm = TAMAÑOS_KDP[nombre_tamaño]
 page_width = cm_to_pt(ancho_cm)
 page_height = cm_to_pt(alto_cm)
 
 # --- Lógica de Generación (Botón Principal) ---
-if st.button("Generar PDF de Sopas de Letras"):
+if st.button("Generar Libro de Sopas de Letras"):
     if excel_file is not None:
         
         # 1. Procesar el Excel
@@ -646,10 +896,11 @@ if st.button("Generar PDF de Sopas de Letras"):
                     palabras_list_filled.append(words) # Guardamos la lista original de palabras
                     ubicaciones_list.append(ubicaciones)
 
-            # 3. Dibujar el PDF
+            # 3. Generar el archivo de salida (PDF o PPTX)
+        if formato_salida == "PDF":
             with st.spinner("Creando archivo PDF..."):
                 buffer = exportar_pdf(sopas_list, palabras_list_filled, ubicaciones_list, themes, dimension, (page_width, page_height))
-            
+
             # 4. Ofrecer la descarga
             if buffer: # Si el buffer se creó correctamente
                 st.success("¡PDF generado! Descárgalo aquí:")
@@ -658,6 +909,20 @@ if st.button("Generar PDF de Sopas de Letras"):
                     data=buffer,
                     file_name='sopas_de_letras_kdp.pdf',
                     mime='application/pdf'
+                )
+
+        elif formato_salida == "PPTX":
+            with st.spinner("Creando archivo PPTX (editable)..."):
+                buffer = crear_presentacion_ppt(sopas_list, palabras_list_filled, ubicaciones_list, themes, dimension, (page_width, page_height))
+
+            # 4. Ofrecer la descarga
+            if buffer: # Si el buffer se creó correctamente
+                st.success("¡PPTX generado! Descárgalo aquí:")
+                st.download_button(
+                    label="Descargar PPTX",
+                    data=buffer,
+                    file_name='sopas_de_letras_kdp.pptx',
+                    mime='application/vnd.openxmlformats-officedocument.presentationml.presentation'
                 )
     else:
         st.error("Por favor, sube un archivo Excel.")
