@@ -1,0 +1,56 @@
+# ui_text.py
+# Este archivo centraliza todo el texto de la interfaz para ambos idiomas.
+
+TEXT_ES = {
+    "title": "Generador de Sopas de Letras KDP",
+    "welcome": "¡Bienvenido! Sube tu archivo Excel de palabras para empezar.",
+    "uploader_label": "Selecciona tu archivo Excel",
+    "grid_size": "Tamaño de cuadrícula (ej. 20x20)",
+    "words_per_puzzle": "Número de palabras por sopa",
+    "difficulty": "Nivel de dificultad",
+    "difficulty_options": ("Fácil", "Medio", "Difícil"),
+    "kdp_size": "Tamaño de página KDP",
+    "output_format": "Elige el formato de salida:",
+    "generate_button": "Generar Libro de Sopas de Letras",
+    "spinner_generating": "Generando sopas...",
+    "spinner_pdf": "Creando archivo PDF...",
+    "spinner_pptx": "Creando archivo PPTX (editable)...",
+    "success_pdf": "¡PDF generado! Descárgalo aquí:",
+    "success_pptx": "¡PPTX generado! Descárgalo aquí:",
+    "download_pdf": "Descargar PDF",
+    "download_pptx": "Descargar PPTX",
+    "error_no_file": "Por favor, sube un archivo Excel.",
+    "error_processing": "No se encontraron palabras en el archivo Excel. Revisa el formato.",
+    "error_font_load": "¡ERROR DE FUENTE! No se pudieron cargar los archivos .ttf.",
+    "error_font_detail": "Asegúrate de que 'RobotoMono-Regular.ttf' y 'RobotoMono-Bold.ttf' estén en la misma carpeta que el script.",
+    "warning_words_not_placed": "En la sopa '{theme}', no se pudieron colocar las siguientes palabras: {words}",
+    "solutions_title": "Soluciones",
+    "solutions_page_title": "Soluciones (pág. {page_num})"
+}
+
+TEXT_EN = {
+    "title": "KDP Word Search Generator",
+    "welcome": "Welcome! Upload your Excel file to get started.",
+    "uploader_label": "Select your Excel file",
+    "grid_size": "Grid size (e.g., 20x20)",
+    "words_per_puzzle": "Number of words per puzzle",
+    "difficulty": "Difficulty Level",
+    "difficulty_options": ("Easy", "Medium", "Hard"),
+    "kdp_size": "KDP Page Size",
+    "output_format": "Choose the output format:",
+    "generate_button": "Generate Word Search Book",
+    "spinner_generating": "Generating puzzles...",
+    "spinner_pdf": "Creating PDF file...",
+    "spinner_pptx": "Creating PPTX (editable) file...",
+    "success_pdf": "PDF generated! Download it here:",
+    "success_pptx": "PPTX generated! Download it here:",
+    "download_pdf": "Download PDF",
+    "download_pptx": "Download PPTX",
+    "error_no_file": "Please upload an Excel file.",
+    "error_processing": "No words found in the Excel file. Please check the format.",
+    "error_font_load": "FONT ERROR! Could not load .ttf files.",
+    "error_font_detail": "Make sure 'RobotoMono-Regular.ttf' and 'RobotoMono-Bold.ttf' are in the same folder as the script.",
+    "warning_words_not_placed": "In puzzle '{theme}', the following words could not be placed: {words}",
+    "solutions_title": "Solutions",
+    "solutions_page_title": "Solutions (p. {page_num})"
+}
