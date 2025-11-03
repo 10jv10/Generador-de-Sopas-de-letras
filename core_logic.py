@@ -1,6 +1,7 @@
 import streamlit as st # Streamlit se mantiene aquí para los st.error/warning dentro de las funciones de lógica/dibujo
 import pandas as pd
 import random
+import requests
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
@@ -179,6 +180,64 @@ def procesar_excel(excel_file, words_per_puzzle):
         # st.error(f"Detalle: {e}")
         raise e # Relanzar la excepción para que sea capturada por el llamador
         # return [], [] # No es necesario si se relanza
+
+def check_license_key(license_key):
+    """
+    Valida una clave de licencia contra la API de Lemon Squeezy.
+    """
+    try:
+        # Carga la clave API desde los secretos de Streamlit
+        # Esto solo funciona cuando la app está desplegada.
+        # Para pruebas locales, st.secrets no estará disponible
+        # a menos que crees un archivo .streamlit/secrets.toml
+        api_key = st.secrets["LEMON_SQUEEZY_API_KEY"]
+    except FileNotFoundError:
+        st.error("Error de configuración del servidor: No se encontró el archivo de secretos.")
+        return False
+    except KeyError:
+        st.error("Error de configuración del servidor: LEMON_SQUEEZY_API_KEY no está configurada en los secretos.")
+        return False
+
+    api_url = "https://api.lemonsqueezy.com/v1/licenses/validate"
+    
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    
+    payload = {
+        "license_key": license_key
+    }
+    
+    try:
+        response = requests.post(api_url, headers=headers, json=payload)
+        
+        # Lanzar un error si la API devolvió algo como 4xx o 5xx
+        response.raise_for_status() 
+        
+        data = response.json()
+        
+        if data.get("valid") == True:
+            # ¡Éxito! La clave es válida.
+            return True
+        else:
+            # La clave es inválida o ha fallado por otra razón (ej. expirada)
+            st.error(f"Error de licencia: {data.get('error', 'Clave inválida')}")
+            return False
+            
+    except requests.exceptions.HTTPError as err:
+        # Esto captura errores de API (ej. 401 Unauthorized si tu API key es incorrecta)
+        st.error(f"Error de API: {err.response.status_code} - {err.response.text}")
+        return False
+    except requests.exceptions.RequestException as e:
+        # Esto captura errores de red (ej. no se puede conectar)
+        st.error(f"Error de conexión: {e}")
+        return False
+
+
+
+
+
 
 # --- FUNCIONES DE DIBUJO PDF (REPORTLAB) ---
 
