@@ -31,7 +31,7 @@ def show_license_form():
                         # ¡ÉXITO! Marcamos el estado de sesión como True
                         st.session_state['license_valid'] = True
                         # Volvemos a ejecutar la app para mostrar la app principal
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         # El error ya se muestra dentro de check_license_key
                         pass
