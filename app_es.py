@@ -11,7 +11,6 @@ if 'license_valid' not in st.session_state:
 # --- Formulario de Licencia ---
 def show_license_form():
     st.title(T['title'])
-    st.write(T['welcome'])
     st.warning("Necesitas una clave de licencia válida para usar esta aplicación.")
     
     with st.form("license_form_es"):
@@ -34,6 +33,7 @@ def show_license_form():
 # --- Aplicación Principal (Tu código original) ---
 def show_main_app():
     st.title(T['title'])
+    st.write(T['welcome'])
     
     excel_file = st.file_uploader(T['uploader_label'], type=["xlsx"])
     dimension = st.number_input(T['grid_size'], min_value=10, max_value=30, value=20)
