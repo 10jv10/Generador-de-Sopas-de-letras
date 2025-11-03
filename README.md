@@ -16,58 +16,6 @@ Supports multiple themes where each puzzle can have its own word list title
 
 Uses custom embedded fonts for professional print quality
 
-Installation
-Clone the repository:
-
-bash
-git clone https://github.com/yourusername/kdp-wordsearch-generator.git
-cd kdp-wordsearch-generator
-Install dependencies:
-
-bash
-pip install -r requirements.txt
-Key dependencies are:
-
-streamlit
-
-pandas
-
-python-pptx
-
-reportlab
-
-Ensure the font files (RobotoMono-Regular.ttf and RobotoMono-Bold.ttf) are located in the project root directory.
-
-Quickstart
-Run the app:
-
-bash
-streamlit run app.py
-Upload your Excel file:
-
-Column A: Theme (must repeat for each word)
-
-Column B: Word
-
-No header row required.
-
-Select grid size, difficulty level, and output format (PDF or PPTX).
-
-Click Generate and download your ready-to-publish puzzle book.
-
-Example Excel format
-Theme	Word
-ANIMALS	Cat
-ANIMALS	Dog
-FRUITS	Apple
-FRUITS	Orange
-Advanced Configuration
-Adjust grid size between 10x10 and 30x30 for custom challenge levels.
-
-Large word lists are split into multiple puzzles automatically.
-
-The app informs if any words could not fit the grid at the selected difficulty.
-
 Contributing
 Contributions are welcome! Please fork the repo, create a feature branch, and submit a pull request. Follow standard GitHub contribution guidelines.
 
