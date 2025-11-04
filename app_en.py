@@ -65,7 +65,7 @@ def show_main_app():
                 
                 with st.spinner(T['spinner_generating']):
                     for words, theme in zip(word_lists, themes):
-                        sopa, ubicaciones, no_colocadas = core_logic.crear_sopas_letras(
+                        sopa, ubicaciones, no_colocadas = core_logic.crear_sopa_letras(
                             words, dimension=dimension, dificultad=dificultad
                         )
                         if no_colocadas:
